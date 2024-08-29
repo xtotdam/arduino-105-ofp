@@ -128,8 +128,7 @@ def prepare_gui(app, S):
 
         dpg.add_separator()
         dpg.add_text('Technical info', color=(150,150,150))
-        dpg.add_text('', tag='txt:buffer_size')
-        dpg.add_text('', tag='last_value')
+        dpg.add_text('', tag='txt:tech_info', color=(150,150,150))
 
 
 

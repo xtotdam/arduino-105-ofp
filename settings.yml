@@ -11,7 +11,7 @@ geometry:
 
 # program
 prg:
-    simulate:           False
+    # simulate:           False   # unused
     start_on_pause:     True
 
     # dt для интерполированных данных

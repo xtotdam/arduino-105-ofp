@@ -6,13 +6,11 @@ import faulthandler
 faulthandler.enable()
 
 import numpy as np
-from scipy.interpolate import CubicSpline, PchipInterpolator, Akima1DInterpolator, make_interp_spline
+from scipy.interpolate import Akima1DInterpolator
 from scipy.stats import linregress
 
-# from more_itertools import windowed
 import itertools
 import time
-# from collections import deque
 
 from window import prepare_gui
 from settings import S
@@ -56,7 +54,6 @@ class Application:
             dpg.configure_item('btn:start', label='Старт')
         else:
             dpg.configure_item('btn:start', label='Стоп')
-        self.print(f'{self.on_pause=}')
 
 
     def queue_reset(self):
@@ -105,7 +102,8 @@ class Application:
         rr = linregress(ts, vs)
         dpg.set_value('txt:velocity_regression',
             f'b = {rr.slope: .3f} ± {rr.stderr:.3f} cм/с²\n'
-            f'c = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с')
+            f'c = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с\n'
+            f'R² = {rr.rvalue**2:.3f}')
         line_y = [rr.slope * line_x[0] + rr.intercept, rr.slope * line_x[1] + rr.intercept]
         dpg.configure_item('series:velocity2', x=line_x, y=line_y)
 
@@ -114,7 +112,8 @@ class Application:
         rr = linregress(ts, vs)
         dpg.set_value('txt:acceleration_regression',
             f'd = {rr.slope: .3f} ± {rr.stderr:.3f} cм/с³\n'
-            f'e = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с²')
+            f'e = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с²\n'
+            f'R² = {rr.rvalue**2:.3f}')
         line_y = [rr.slope * line_x[0] + rr.intercept, rr.slope * line_x[1] + rr.intercept]
         dpg.configure_item('series:acceleration2', x=line_x, y=line_y)
 
@@ -156,11 +155,12 @@ while dpg.is_dearpygui_running():
 
         prev_t = t
 
-        dpg.set_value('last_value', f'{t=} {app.arduino.inWaiting()=}')
-        try:
-            dpg.set_value('txt:buffer_size', f'{len(app.raw_ts)=}\n{app.ts.shape=}\n{app.xs.shape=}\n\n{app.new_ts.shape=}\n{app.new_xs.shape=}')
-        except AttributeError:
-            dpg.set_value('txt:buffer_size', f'{len(app.raw_ts)=}')
+        # dpg.set_value('txt:tech_info', f'{t=}\n{app.arduino.inWaiting()=}\n{len(app.raw_ts)=}')
+        dpg.set_value('txt:tech_info',
+            f'Последнее значение {t}\n'
+            f'Длина очереди {app.arduino.inWaiting()}\n'
+            f'Размер буфера {len(app.raw_ts)}')
+
 
 
     if not app.on_pause:
@@ -180,9 +180,7 @@ while dpg.is_dearpygui_running():
         # if app.on_pause and not app.vel_acc_calculated and len(app.raw_ts) > 3:
         if len(app.raw_ts) > 50:
 
-            # f = CubicSpline(ts, xs)
             f = Akima1DInterpolator(app.ts, app.xs, method='makima')
-            # f = PchipInterpolator(ts, xs)
 
             app.new_ts = np.arange(0, app.ts[-1], S.prg.interp_dt)
             app.new_xs = f(app.new_ts)

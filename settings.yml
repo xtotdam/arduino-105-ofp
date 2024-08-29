@@ -1,0 +1,34 @@
+sensor:
+    port:               COM8
+    baudrate:           115200
+
+
+geometry:
+    # число секторов в диске с прорезями
+    sectors:            120
+    # радиус вала, на который наматывается нить
+    radius:             10      # mm
+
+# program
+prg:
+    simulate:           False
+    start_on_pause:     True
+
+    # dt для интерполированных данных
+    interp_dt:          0.05    # s
+    # show_interp_coord:  False   # unused
+
+    # размеры области для графика
+    controls_width:     400     # px
+    graph_width:        1500    # px
+    graph_height:       1000    # px
+
+    min_v:              0       # cm/s
+    max_v:              200
+
+    min_a:              -50     # cm/s^2
+    max_a:              50
+
+    interval_1:         0.1
+    interval_2:         0.2
+

@@ -5,39 +5,36 @@ import easygui
 import faulthandler
 faulthandler.enable()
 
-import yaml
 import numpy as np
 from scipy.interpolate import CubicSpline, PchipInterpolator, Akima1DInterpolator, make_interp_spline
+from scipy.stats import linregress
 
 # from more_itertools import windowed
 import itertools
 import time
+# from collections import deque
 
 from window import prepare_gui
-
-
+from settings import S
+print(S)
 
 class Application:
-    on_pause = True
     reset_queued = False
-    log = ''
 
     # data storage
     raw_ts = list()
 
-    # defaults
-    port = 'COM8'
-    baudrate = 115200
 
-    sectors = 120    # 1 sector = 3 deg
-    interp_dt = 0.05 # s
+    def __init__(self, S):
+        self.on_pause = S.prg.start_on_pause
 
+        # if simulate:
+        #     pass
 
-    def __init__(self):
         import serial
 
         try:
-            self.arduino = serial.Serial(self.port, self.baudrate, timeout=30)
+            self.arduino = serial.Serial(S.sensor.port, S.sensor.baudrate, timeout=30)
             time.sleep(2)
 
         except serial.serialutil.SerialException as e:
@@ -71,17 +68,11 @@ class Application:
 
         dpg.configure_item('series:coordinate',     x=[], y=[])
         dpg.configure_item('series:velocity',       x=[], y=[])
+        dpg.configure_item('series:velocity2',      x=[], y=[])
         dpg.configure_item('series:acceleration',   x=[], y=[])
+        dpg.configure_item('series:acceleration2',  x=[], y=[])
 
         self.reset_queued = False
-        self.print('*** RESET ***')
-
-
-    def print(self, *s):
-        ss = ', '.join(str(s2) for s2 in s)
-        self.log += '\n' + str(ss)
-        dpg.set_value('log', self.log)
-        dpg.set_y_scroll('w:log', dpg.get_y_scroll_max('w:log'))
 
 
     def set_interval_start(self, v):
@@ -96,15 +87,48 @@ class Application:
         dpg.set_value('drag_right', v)
 
 
+    def calculate(self):
+        t1 = min(self.interval_start, self.interval_end)
+        t2 = max(self.interval_start, self.interval_end)
+
+        print(f'Velocity = [{min(self.vels)}, {max(self.vels)}]')
+        print(f'Acceleration = [{min(self.accs)}, {max(self.accs)}]')
+
+        # print(t1, t2)
+        indices = np.ravel(np.argwhere((t1 <= app.new_ts) & (app.new_ts <= t2)))
+        # print(indices)
+        ts = app.new_ts[indices]
+        line_x = [ts[0], ts[-1]]
+
+        # Regressing velocities
+        vs = app.vels[indices]
+        rr = linregress(ts, vs)
+        dpg.set_value('txt:velocity_regression',
+            f'b = {rr.slope: .3f} ± {rr.stderr:.3f} cм/с²\n'
+            f'c = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с')
+        line_y = [rr.slope * line_x[0] + rr.intercept, rr.slope * line_x[1] + rr.intercept]
+        dpg.configure_item('series:velocity2', x=line_x, y=line_y)
+
+        # Regressing acceleration
+        vs = app.accs[indices]
+        rr = linregress(ts, vs)
+        dpg.set_value('txt:acceleration_regression',
+            f'd = {rr.slope: .3f} ± {rr.stderr:.3f} cм/с³\n'
+            f'e = {rr.intercept: .3f} ± {rr.intercept_stderr:.3f} cм/с²')
+        line_y = [rr.slope * line_x[0] + rr.intercept, rr.slope * line_x[1] + rr.intercept]
+        dpg.configure_item('series:acceleration2', x=line_x, y=line_y)
 
 
 
-app = Application()
 
-prepare_gui(app)
 
-app.set_interval_start(0.1)
-app.set_interval_end(0.2)
+
+app = Application(S)
+
+prepare_gui(app, S)
+
+app.set_interval_start(S.prg.interval_1)
+app.set_interval_end(S.prg.interval_2)
 
 
 
@@ -128,19 +152,23 @@ while dpg.is_dearpygui_running():
 
         if not app.on_pause:
             if t != prev_t:
-                app.raw_ts.append(t / 1000)
+                app.raw_ts.append(t / 1000)    # millis -> s
 
         prev_t = t
 
         dpg.set_value('last_value', f'{t=} {app.arduino.inWaiting()=}')
-
+        try:
+            dpg.set_value('txt:buffer_size', f'{len(app.raw_ts)=}\n{app.ts.shape=}\n{app.xs.shape=}\n\n{app.new_ts.shape=}\n{app.new_xs.shape=}')
+        except AttributeError:
+            dpg.set_value('txt:buffer_size', f'{len(app.raw_ts)=}')
 
 
     if not app.on_pause:
         try:
             app.ts = np.array(app.raw_ts, dtype=float) - app.raw_ts[0]
-            app.xs = np.arange(0, app.ts.shape[0], dtype=float) * 6.28 / app.sectors
+            app.xs = np.arange(0, app.ts.shape[0], dtype=float) * 6.28 / S.geometry.sectors * S.geometry.radius
         except IndexError:
+            print(f'IndexError: {len(app.raw_ts)=}')
             continue
 
         dpg.configure_item('series:coordinate', x=app.ts, y=app.xs)
@@ -153,17 +181,17 @@ while dpg.is_dearpygui_running():
         if len(app.raw_ts) > 50:
 
             # f = CubicSpline(ts, xs)
-            f = Akima1DInterpolator(app.ts, app.xs)
+            f = Akima1DInterpolator(app.ts, app.xs, method='makima')
             # f = PchipInterpolator(ts, xs)
 
-            app.new_ts = np.arange(0, app.ts[-1], app.interp_dt)
+            app.new_ts = np.arange(0, app.ts[-1], S.prg.interp_dt)
             app.new_xs = f(app.new_ts)
 
-            app.vels = np.gradient(app.new_xs) / app.interp_dt
-            app.accs = np.gradient(app.vels) / app.interp_dt
+            app.vels = np.gradient(app.new_xs) / S.prg.interp_dt
+            app.accs = np.gradient(app.vels) / S.prg.interp_dt
 
 
-            # dpg.configure_item('series:int_coord', x=new_ts, y=new_xs)
+            # dpg.configure_item('series:coordinate2', x=app.new_ts, y=app.new_xs)
             dpg.configure_item('series:velocity', x=app.new_ts, y=app.vels)
             dpg.configure_item('series:acceleration', x=app.new_ts, y=app.accs)
             # dpg.fit_axis_data('ax:y:velocity')

@@ -24,7 +24,7 @@ def resize_after_window(item, window, xoffset=0, yoffset=0):
 
 
 
-def prepare_gui(app):
+def prepare_gui(app, S):
 
     dpg.create_context()
 
@@ -41,29 +41,39 @@ def prepare_gui(app):
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=lambda s,a,u:key_press_callback(s,a,u,app))
 
-    with dpg.theme(tag="line_plot_lw2"):
+    with dpg.theme(tag="line_plot_sensors"):
+        with dpg.theme_component(dpg.mvLineSeries):
+            dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 3, category=dpg.mvThemeCat_Plots)
+
+    with dpg.theme(tag="line_plot_regression"):
         with dpg.theme_component(dpg.mvLineSeries):
             dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 5, category=dpg.mvThemeCat_Plots)
 
 
     ### BIG WINDOW WITH GRAPH
-    with dpg.window(label='Sensor values', tag='w:sensor', height=1000, width=1500, pos=(410,0), no_close=True):
+    with dpg.window(label='Показания сенсора', tag='w:sensor',
+        height=S.prg.graph_height, width=S.prg.graph_width, pos=(S.prg.controls_width + 10, 0), no_close=True):
         with dpg.plot(label=f"", height=750, width=780, tag="plot:sensor", crosshairs=True):
             dpg.add_plot_legend(horizontal=True)
             dpg.add_plot_axis(dpg.mvXAxis, label="t, с", tag='ax:x:sensor')
             dpg.add_plot_axis(dpg.mvYAxis, label="s, см", tag='ax:y:coordinate')
             dpg.add_line_series(x=[], y=[], label="Пройденный путь s", parent='ax:y:coordinate', tag='series:coordinate')
-            # dpg.add_line_series(x=[], y=[], label="ИНтерп. коорд.", parent='ax:y:coordinate', tag='series:int_coord')
+            # dpg.add_line_series(x=[], y=[], label="Интерполяция s'", parent='ax:y:coordinate', tag='series:coordinate2')
 
-            dpg.add_plot_axis(dpg.mvYAxis, label="v, см/с", tag='ax:y:velocity')
-            dpg.add_line_series(x=[], y=[], label="Скорость v", parent='ax:y:velocity', tag='series:velocity')
-            dpg.set_axis_limits('ax:y:velocity', 0, 20)
+            dpg.add_plot_axis(dpg.mvYAxis, label="V, см/с", tag='ax:y:velocity')
+            dpg.add_line_series(x=[], y=[], label="Скорость V", parent='ax:y:velocity', tag='series:velocity')
+            dpg.set_axis_limits('ax:y:velocity', S.prg.min_v, S.prg.max_v)
 
-            dpg.add_plot_axis(dpg.mvYAxis, label="a, см/с^2", tag='ax:y:acceleration')
+            dpg.add_plot_axis(dpg.mvYAxis, label="a, см/с²", tag='ax:y:acceleration')
             dpg.add_line_series(x=[], y=[], label="Ускорение a", parent='ax:y:acceleration', tag='series:acceleration')
-            dpg.set_axis_limits('ax:y:acceleration', -5, 5)
+            dpg.set_axis_limits('ax:y:acceleration', S.prg.min_a, S.prg.max_a)
 
-            dpg.bind_item_theme("plot:sensor", "line_plot_lw2")
+            dpg.add_line_series(x=[], y=[], label="Линейная регрессия V'", parent='ax:y:velocity', tag='series:velocity2')
+            dpg.add_line_series(x=[], y=[], label="Линейная регрессия a'", parent='ax:y:acceleration', tag='series:acceleration2')
+
+            dpg.bind_item_theme("plot:sensor", "line_plot_sensors")
+            dpg.bind_item_theme("series:velocity2", "line_plot_regression")
+            dpg.bind_item_theme("series:acceleration2", "line_plot_regression")
 
 
             dpg.add_drag_line(label="Начало интервала", tag='drag_left', default_value=1,
@@ -80,16 +90,17 @@ def prepare_gui(app):
 
 
     ### CONTROLS
-    with dpg.window(label='Управление', tag='w:main', pos=(0, 0), height=1000, width=400, no_close=True):
-        with dpg.menu_bar():
-            with dpg.menu(label="Menu"):
-                # dpg.add_menu_item(label="Save GUI view", callback=save_init)
-                dpg.add_menu_item(label="Fonts", callback=dpg.show_font_manager)
-                dpg.add_menu_item(label="Debug", callback=dpg.show_debug)
-                dpg.add_menu_item(label="Docs", callback=dpg.show_documentation)
-                dpg.add_menu_item(label="Items", callback=dpg.show_item_registry)
-                dpg.add_menu_item(label="Metrics", callback=dpg.show_metrics)
-                dpg.add_menu_item(label="Style", callback=dpg.show_style_editor)
+    with dpg.window(label='Управление', tag='w:main',
+        pos=(0, 0), height=S.prg.graph_height, width=S.prg.controls_width, no_close=True):
+        # with dpg.menu_bar():
+        #     with dpg.menu(label="Menu"):
+        #         # dpg.add_menu_item(label="Save GUI view", callback=save_init)
+        #         dpg.add_menu_item(label="Fonts", callback=dpg.show_font_manager)
+        #         dpg.add_menu_item(label="Debug", callback=dpg.show_debug)
+        #         dpg.add_menu_item(label="Docs", callback=dpg.show_documentation)
+        #         dpg.add_menu_item(label="Items", callback=dpg.show_item_registry)
+        #         dpg.add_menu_item(label="Metrics", callback=dpg.show_metrics)
+        #         dpg.add_menu_item(label="Style", callback=dpg.show_style_editor)
 
         with dpg.group(horizontal=True):
             dpg.add_button(label='Старт', tag='btn:start', width=100, height=50, callback=app.toggle_pause)
@@ -97,25 +108,29 @@ def prepare_gui(app):
 
 
         dpg.add_separator()
-        dpg.add_text("Интервал")
+        dpg.add_text("Расчётный интервал")
+        dpg.add_input_float(label='Начало', default_value=1, tag='int_start', callback=lambda s,a,u:app.set_interval_start(a))
+        dpg.add_input_float(label='Конец', default_value=2, tag='int_end', callback=lambda s,a,u:app.set_interval_end(a))
+        dpg.add_button(label='Рассчитать', tag='btn:calc', callback=app.calculate)
 
-        dpg.add_input_float(label='Начало', default_value=1, tag='int_start',
-            callback=lambda s,a,u:app.set_interval_start(a))
+        dpg.add_text("\nСкорость V\' = bt + c")
+        dpg.add_text('', tag='txt:velocity_regression')
 
-        dpg.add_input_float(label='Конец', default_value=2, tag='int_end',
-            callback=lambda s,a,u:app.set_interval_end(a))
+        dpg.add_text("\nУскорение a\' = dt + e")
+        dpg.add_text('', tag='txt:acceleration_regression')
 
+
+        # FOOTER
+        dpg.add_separator()
+        t = dpg.add_text('Справка')
+        with dpg.tooltip(t):
+            dpg.add_text(open('help_shown.txt', encoding='utf8').read().strip())
 
         dpg.add_separator()
+        dpg.add_text('Technical info', color=(150,150,150))
+        dpg.add_text('', tag='txt:buffer_size')
         dpg.add_text('', tag='last_value')
 
-
-
-
-    ### LOG
-    with dpg.window(label='Log', tag='w:log', width=600, height=600, pos=(1220, 0), no_close=True, show=False):
-        dpg.add_text('', tag='log', wrap=600, )
-        dpg.bind_item_font(dpg.last_item(), smaller_font)
 
 
     viewport = dpg.create_viewport(title='OFP 105', width=900, height=900)
